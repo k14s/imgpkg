@@ -11,18 +11,29 @@ import (
 	regname "github.com/google/go-containerregistry/pkg/name"
 )
 
+const RootBundleLabelKey string = "dev.carvel.imgpkg.copy.root-bundle"
+
+type ImageRefLabels map[string]interface{}
+
 type UnprocessedImageRef struct {
 	DigestRef string
 	Tag       string
+
+	Labels ImageRefLabels
+}
+
+func (u UnprocessedImageRef) Key() string {
+	return u.DigestRef + u.Tag
 }
 
 type UnprocessedImageRefs struct {
-	imgRefs map[UnprocessedImageRef]struct{}
+	imgRefs map[string]UnprocessedImageRef
+
 	sync.Mutex
 }
 
 func NewUnprocessedImageRefs() *UnprocessedImageRefs {
-	return &UnprocessedImageRefs{imgRefs: map[UnprocessedImageRef]struct{}{}}
+	return &UnprocessedImageRefs{imgRefs: map[string]UnprocessedImageRef{}}
 }
 
 func (i *UnprocessedImageRefs) Add(imgRef UnprocessedImageRef) {
@@ -30,7 +41,7 @@ func (i *UnprocessedImageRefs) Add(imgRef UnprocessedImageRef) {
 
 	i.Mutex.Lock()
 	defer i.Mutex.Unlock()
-	i.imgRefs[imgRef] = struct{}{}
+	i.imgRefs[imgRef.Key()] = imgRef
 }
 
 func (i *UnprocessedImageRefs) Length() int {
@@ -38,10 +49,14 @@ func (i *UnprocessedImageRefs) Length() int {
 }
 
 func (i *UnprocessedImageRefs) All() []UnprocessedImageRef {
+	i.Mutex.Lock()
+	defer i.Mutex.Unlock()
+
 	var result []UnprocessedImageRef
-	for imgRef := range i.imgRefs {
+	for _, imgRef := range i.imgRefs {
 		result = append(result, imgRef)
 	}
+
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].DigestRef < result[j].DigestRef
 	})
